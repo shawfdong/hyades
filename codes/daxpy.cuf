@@ -1,0 +1,81 @@
+module kernel
+    contains
+    attributes(global) subroutine daxpy(n, a, x, y)
+        integer, value :: n
+        real(8), value :: a
+        real(8), device :: x(n), y(n)
+        integer :: id
+ 
+        ! Get global thread ID
+        id = (blockidx%x-1)*blockdim%x + threadidx%x
+ 
+        if (id <= n) then
+            y(id) = a * x(id) + y(id)
+        endif
+    end subroutine daxpy
+end module kernel
+ 
+program main
+    use cudafor
+    use kernel
+ 
+    implicit none
+    real(8) :: a, m
+    integer :: i
+ 
+    ! Size of vectors
+    integer,parameter :: n = 2048
+ 
+    ! Host vectors
+    real(8),dimension(:),allocatable :: x
+    real(8),dimension(:),allocatable :: y
+    real(8),dimension(:),allocatable :: d
+ 
+    ! Device vectors
+    real(8),device,dimension(:),allocatable :: dx
+    real(8),device,dimension(:),allocatable :: dy
+ 
+    call random_number(a)
+ 
+    ! Allocate memory for each vector on host
+    allocate(x(n))
+    allocate(y(n))
+ 
+    ! Initialize x and y
+    call random_number(x)
+    call random_number(y)
+ 
+    ! Allocate memory for each vector on GPU
+    allocate(dx(n))
+    allocate(dy(n))
+ 
+    ! Implicit copy of host vectors to device
+    dx = x(1:n)
+    dy = y(1:n)
+ 
+    ! Execute the kernel
+    call daxpy<<<n/64, 64>>>(n, a, dx, dy)
+ 
+    ! Implicit copy of device array to host
+    allocate(d(n))
+    d = dy(1:n)
+ 
+    ! Verify the results
+    y = a * x + y
+    m = maxval( abs( (d-y)/y) )
+    if ( m < 1E-12) then
+        print *, "Success!"
+    else
+    print *, "Failure!"
+    endif
+ 
+    ! Release device memory
+    deallocate(dx)
+    deallocate(dy)
+ 
+    ! Release host memory
+    deallocate(x)
+    deallocate(y)
+    deallocate(d)
+ 
+end program main
